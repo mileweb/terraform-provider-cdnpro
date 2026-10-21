@@ -5,7 +5,7 @@ through the CDN Pro API: properties, certificates, edge hostnames and the
 deployments that put them live.
 
 Design reference: Confluence PRD *Terraform Provider for CDN Pro API* (Jira
-NCAS-5719). This repository implements **Phase 1 (core)** of that PRD.
+NCAS-5719). This repository implements **Phases 1 and 2** of that PRD.
 
 | Resource | Wraps | Status |
 | --- | --- | --- |
@@ -13,7 +13,9 @@ NCAS-5719). This repository implements **Phase 1 (core)** of that PRD.
 | `cdnpro_certificate` | `/cdn/certificates` + versions (folded) | Phase 1, done |
 | `cdnpro_edge_hostname` | `/cdn/edgeHostnames` | Phase 1, done |
 | `cdnpro_deployment` | `/cdn/deploymentTasks` + implicit `/cdn/validations` | Phase 1, done |
-| `cdnpro_secret`, `cdnpro_webhook`, `cdnpro_log_config` | plain CRUD | Phase 2, not started |
+| `cdnpro_secret` | `/cdn/secrets` | Phase 2, done |
+| `cdnpro_webhook` | `/cdn/webhooks` | Phase 2, done |
+| `cdnpro_log_config` | `/cdn/report/logConfigs` | Phase 2, done |
 | `cdnpro_purge`, `cdnpro_prefetch` (actions), data sources | | Phase 3, not started |
 
 ## Requirements
@@ -67,10 +69,13 @@ attribute reference.
 - **Optimistic concurrency.** The provider caches `Last-Modified` from every
   read and sends `If-Unmodified-Since` on every PATCH/PUT. A 412 surfaces as
   "Resource modified outside Terraform".
-- **Write-only material.** `private_key`, `certificate` and `chain_cert` are
+- **Write-only material.** `private_key`, `certificate` and `chain_cert` on
+  certificates, `secret` on secrets and `credentials.secret_key` on webhooks are
   never stored in state; SHA-256 hashes in private state drive change
-  detection. The private key is AES-128-CBC encrypted with key material derived
-  from the request `Date` header, exactly as the API requires.
+  detection. A changed value shows up in the plan as `last_update_time` (or the
+  certificate's `latest_version`) becoming known after apply. The private key
+  is AES-128-CBC encrypted with key material derived from the request `Date`
+  header, exactly as the API requires.
 - **Edge hostnames are polled** on `history[0]`; a successful deletion is
   observed as a `404`.
 
@@ -137,3 +142,11 @@ docs/                         generated registry docs
   object with a `disabled` flag that sends the literal `"off"`.
 - `redirect_http_to_https` is a string attribute (`true`, `false`, `302`,
   `307`, `308`); HCL booleans convert automatically.
+- Webhook metadata uses `lastUpdateTime` (not the PRD's `lastUpdatetime`), and
+  the API returns `credentials.secretKey` in plain text on GET; the provider
+  still treats it as write-only. The API cannot remove credentials once set, so
+  dropping the `credentials` block replaces the webhook.
+- The webhook API requires `credentials.user` and `secret_key` together, so both
+  are required inside the block.
+- The secret PATCH endpoint is a merge patch that only accepts
+  `Content-Type: application/json`, which is what the client sends.

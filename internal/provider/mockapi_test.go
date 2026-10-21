@@ -31,6 +31,9 @@ type mockAPI struct {
 	edgeHosts    map[string]*mockEdgeHostname
 	deployments  map[string]*mockTask
 	validations  map[string]*mockTask
+	secrets      map[string]*mockSecret
+	webhooks     map[string]*mockWebhook
+	logConfigs   map[string]*mockLogConfig
 
 	// Counters the tests assert on.
 	deploymentPosts int
@@ -98,6 +101,9 @@ func newMockAPI() *mockAPI {
 		edgeHosts:    map[string]*mockEdgeHostname{},
 		deployments:  map[string]*mockTask{},
 		validations:  map[string]*mockTask{},
+		secrets:      map[string]*mockSecret{},
+		webhooks:     map[string]*mockWebhook{},
+		logConfigs:   map[string]*mockLogConfig{},
 	}
 	m.server = httptest.NewServer(http.HandlerFunc(m.handle))
 	return m
@@ -205,6 +211,16 @@ func (m *mockAPI) handle(w http.ResponseWriter, r *http.Request) {
 		m.handleDeployments(w, r, rest)
 	case "validations":
 		m.handleValidations(w, r, rest)
+	case "secrets":
+		m.handleSecrets(w, r, rest)
+	case "webhooks":
+		m.handleWebhooks(w, r, rest)
+	case "report":
+		if len(rest) > 0 && rest[0] == "logConfigs" {
+			m.handleLogConfigs(w, r, rest[1:])
+			return
+		}
+		apiError(w, 404, "NotFound", "unknown path")
 	default:
 		apiError(w, 404, "NotFound", "unknown path")
 	}

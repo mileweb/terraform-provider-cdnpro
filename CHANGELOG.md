@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+Phase 2 (supporting configuration) of the CDN Pro Terraform provider (NCAS-5719):
+
+- `cdnpro_secret`: write-only `secret` tracked by hash and rotated in place.
+- `cdnpro_webhook`: write-only `credentials.secret_key`; removing the
+  `credentials` block replaces the webhook because the API cannot clear it.
+- `cdnpro_log_config`: `/cdn/report/logConfigs` with the API's integer ID
+  carried as a string and server defaults mirrored in the schema.
+- Mock API and acceptance coverage for all three.
+
 Phase 1 (core) of the CDN Pro Terraform provider (NCAS-5719):
 
 - Provider configuration with HMAC-SHA1 request signing, environment variable

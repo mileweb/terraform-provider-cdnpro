@@ -186,6 +186,9 @@ func (p *cdnproProvider) Resources(_ context.Context) []func() resource.Resource
 		NewCertificateResource,
 		NewEdgeHostnameResource,
 		NewDeploymentResource,
+		NewSecretResource,
+		NewWebhookResource,
+		NewLogConfigResource,
 	}
 }
 
