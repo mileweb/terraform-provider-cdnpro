@@ -35,8 +35,9 @@ checksum:
 signs:
   - artifacts: checksum
     # The passphrase is fed on stdin so gpg never needs a pinentry on the
-    # CI runner, and a trailing newline in the secret is harmless.
-    stdin: "{{ .Env.GPG_PASSPHRASE }}"
+    # CI runner. trim drops the CRLF a browser form submit can append to the
+    # secret, which gpg would otherwise reject as a bad passphrase.
+    stdin: "{{ trim .Env.GPG_PASSPHRASE }}"
     args:
       - "--batch"
       - "--pinentry-mode"
