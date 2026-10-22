@@ -42,6 +42,20 @@ jobs:
           gpg_private_key: ${{ secrets.TERRAFORM_PROVIDER_PRIVATE_KEY }}
           passphrase: ${{ secrets.PASSPHRASE }}
 
+      # Fail fast, before the multi-minute cross-compile, if the key or the
+      # passphrase in the secrets cannot produce a signature.
+      - name: Verify signing key
+        env:
+          GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
+          GPG_PASSPHRASE: ${{ secrets.PASSPHRASE }}
+        run: |
+          echo "fingerprint=$GPG_FINGERPRINT passphrase_length=${#GPG_PASSPHRASE}"
+          gpg --list-secret-keys --with-colons | grep -c '^sec' | sed 's/^/secret keys: /'
+          printf '%s' "$GPG_PASSPHRASE" | tr -d '\r\n' \
+            | gpg --batch --pinentry-mode loopback --passphrase-fd 0 \
+                  --local-user "$GPG_FINGERPRINT" --output /tmp/probe.sig --detach-sign go.mod
+          gpg --verify /tmp/probe.sig go.mod
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
