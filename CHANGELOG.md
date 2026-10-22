@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 (2026-10-22)
 
 Phase 3 (operational actions and data sources) of the CDN Pro Terraform provider (NCAS-5719):
 
