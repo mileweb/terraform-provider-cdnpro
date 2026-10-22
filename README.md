@@ -5,22 +5,28 @@ through the CDN Pro API: properties, certificates, edge hostnames and the
 deployments that put them live.
 
 Design reference: Confluence PRD *Terraform Provider for CDN Pro API* (Jira
-NCAS-5719). This repository implements **Phases 1 and 2** of that PRD.
+NCAS-5719). This repository implements all three phases of that PRD.
 
-| Resource | Wraps | Status |
+| Type | Kind | Wraps |
 | --- | --- | --- |
-| `cdnpro_property` | `/cdn/properties` + versions (folded) | Phase 1, done |
-| `cdnpro_certificate` | `/cdn/certificates` + versions (folded) | Phase 1, done |
-| `cdnpro_edge_hostname` | `/cdn/edgeHostnames` | Phase 1, done |
-| `cdnpro_deployment` | `/cdn/deploymentTasks` + implicit `/cdn/validations` | Phase 1, done |
-| `cdnpro_secret` | `/cdn/secrets` | Phase 2, done |
-| `cdnpro_webhook` | `/cdn/webhooks` | Phase 2, done |
-| `cdnpro_log_config` | `/cdn/report/logConfigs` | Phase 2, done |
-| `cdnpro_purge`, `cdnpro_prefetch` (actions), data sources | | Phase 3, not started |
+| `cdnpro_property` | resource | `/cdn/properties` + versions (folded) |
+| `cdnpro_certificate` | resource | `/cdn/certificates` + versions (folded) |
+| `cdnpro_edge_hostname` | resource | `/cdn/edgeHostnames` |
+| `cdnpro_deployment` | resource | `/cdn/deploymentTasks` + implicit `/cdn/validations` |
+| `cdnpro_secret` | resource | `/cdn/secrets` |
+| `cdnpro_webhook` | resource | `/cdn/webhooks` |
+| `cdnpro_log_config` | resource | `/cdn/report/logConfigs` |
+| `cdnpro_purge` | action | `/cdn/purges` |
+| `cdnpro_prefetch` | action | `/cdn/prefetches` |
+| `cdnpro_hostname` | data source | `/cdn/hostnames/{hostname}` |
+| `cdnpro_shields` | data source | `/cdn/shields` |
+| `cdnpro_isps` | data source | `/cdn/isps` |
+| `cdnpro_client_regions` | data source | `/cdn/clientRegions` |
 
 ## Requirements
 
-- Terraform >= 1.11 (write-only attributes are used for certificate material).
+- Terraform >= 1.11 (write-only attributes are used for certificate material);
+  Terraform >= 1.14 for the `cdnpro_purge` / `cdnpro_prefetch` actions.
 - Go >= 1.24 to build.
 
 ## Usage
@@ -78,6 +84,13 @@ attribute reference.
   header, exactly as the API requires.
 - **Edge hostnames are polled** on `history[0]`; a successful deletion is
   observed as a `404`.
+- **Purge and prefetch are Terraform Actions**, not resources: nothing is
+  stored in state. Both wait for the task to finish (purges read their status
+  top-level, prefetches under `metaData`) and fail the apply when the API's
+  `successRate` is below 100. A prefetch with `start_time` is only submitted,
+  not awaited.
+- **Data sources are plain pass-throughs** with deterministic sorting; the
+  API's sort parameters are deliberately not exposed.
 
 ### Auth
 
@@ -150,3 +163,12 @@ docs/                         generated registry docs
   are required inside the block.
 - The secret PATCH endpoint is a merge patch that only accepts
   `Content-Type: application/json`, which is what the client sends.
+- Purge and prefetch status enums also contain `succeeded` and `failed`
+  besides `finished`; the poller accepts all three as terminal. Prefetch
+  status fields live under `metaData` (capital D), and the not-found code is
+  `InvalidPrefetchId`.
+- `GET /cdn/hostnames/{hostname}` returns 200 with null fields for an unknown
+  hostname; `cdnpro_hostname` exposes this as `found = false` plus a warning.
+- Shield `ipV4` / `ipV6` are arrays of CIDRs, exposed as `ipv4` / `ipv6` lists.
+- Prefetch accepts an optional `prefetch_level` (`Edge` or `Parent`) that the
+  PRD did not list.

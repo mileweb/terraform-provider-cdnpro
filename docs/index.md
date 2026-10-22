@@ -66,5 +66,7 @@ Optional:
 - `deployment_timeout` (String) Maximum time to wait for a deployment task. Defaults to `10m0s`.
 - `edge_hostname_interval` (String) Interval between edge hostname provisioning checks. Defaults to `20s`.
 - `edge_hostname_timeout` (String) Maximum time to wait for an edge hostname operation. Defaults to `10m0s`.
+- `purge_interval` (String) Interval between purge/prefetch status checks. Defaults to `30s`.
+- `purge_timeout` (String) Maximum time to wait for a purge or prefetch. Defaults to `30m0s`.
 - `validation_interval` (String) Interval between property validation status checks. Defaults to `10s`.
 - `validation_timeout` (String) Maximum time to wait for a property validation. Defaults to `10m0s`.

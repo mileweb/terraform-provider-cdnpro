@@ -34,11 +34,15 @@ type mockAPI struct {
 	secrets      map[string]*mockSecret
 	webhooks     map[string]*mockWebhook
 	logConfigs   map[string]*mockLogConfig
+	purges       map[string]*mockTask
+	prefetches   map[string]*mockTask
 
 	// Counters the tests assert on.
 	deploymentPosts int
 	validationPosts int
 	decryptedKeys   []string
+	purgePosts      []map[string]any
+	prefetchPosts   []map[string]any
 	requests        []string
 }
 
@@ -90,6 +94,7 @@ type mockTask struct {
 	ticks   int
 	applied bool
 	created time.Time
+	rate    float64 // successRate reported by purge/prefetch tasks
 }
 
 func newMockAPI() *mockAPI {
@@ -104,6 +109,8 @@ func newMockAPI() *mockAPI {
 		secrets:      map[string]*mockSecret{},
 		webhooks:     map[string]*mockWebhook{},
 		logConfigs:   map[string]*mockLogConfig{},
+		purges:       map[string]*mockTask{},
+		prefetches:   map[string]*mockTask{},
 	}
 	m.server = httptest.NewServer(http.HandlerFunc(m.handle))
 	return m
@@ -215,6 +222,18 @@ func (m *mockAPI) handle(w http.ResponseWriter, r *http.Request) {
 		m.handleSecrets(w, r, rest)
 	case "webhooks":
 		m.handleWebhooks(w, r, rest)
+	case "purges":
+		m.handlePurges(w, r, rest)
+	case "prefetches":
+		m.handlePrefetches(w, r, rest)
+	case "hostnames":
+		m.handleHostnames(w, r, rest)
+	case "shields":
+		m.handleShields(w, r, rest)
+	case "isps":
+		m.handleISPs(w, r, rest)
+	case "clientRegions":
+		m.handleClientRegions(w, r, rest)
 	case "report":
 		if len(rest) > 0 && rest[0] == "logConfigs" {
 			m.handleLogConfigs(w, r, rest[1:])

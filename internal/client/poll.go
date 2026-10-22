@@ -82,15 +82,22 @@ var vocabularies = map[TaskKind]map[string]Outcome{
 		"succeeded":  Succeeded,
 		"failed":     Failed,
 	},
+	// Purges and prefetches normally end in "finished" with the outcome in
+	// successRate, but they share the API's task status enum, so the other two
+	// terminal values are accepted as well.
 	KindPurge: {
 		"waiting":    Pending,
 		"inprogress": Pending,
 		"finished":   Finished,
+		"succeeded":  Succeeded,
+		"failed":     Failed,
 	},
 	KindPrefetch: {
 		"waiting":    Pending,
 		"inprogress": Pending,
 		"finished":   Finished,
+		"succeeded":  Succeeded,
+		"failed":     Failed,
 	},
 }
 

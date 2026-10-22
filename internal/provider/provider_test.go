@@ -70,6 +70,7 @@ provider "cdnpro" {
     validation_interval    = "20ms"
     deployment_interval    = "20ms"
     edge_hostname_interval = "20ms"
+    purge_interval         = "20ms"
   }
 }
 `, m.server.URL, m.user, m.key)

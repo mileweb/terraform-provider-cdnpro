@@ -33,8 +33,9 @@ func TestClassify(t *testing.T) {
 
 		{KindPurge, "inprogress", Pending},
 		{KindPurge, "finished", Finished},
-		{KindPurge, "succeeded", Unknown},
-		{KindPurge, "failed", Unknown},
+		{KindPurge, "succeeded", Succeeded},
+		{KindPurge, "failed", Failed},
+		{KindPurge, "in progress", Unknown},
 		{KindPrefetch, "finished", Finished},
 
 		{KindDeploymentTask, "", Unknown},

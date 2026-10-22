@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework/action"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -26,7 +27,10 @@ const (
 )
 
 // Ensure the provider satisfies the framework interfaces.
-var _ provider.Provider = (*cdnproProvider)(nil)
+var (
+	_ provider.Provider            = (*cdnproProvider)(nil)
+	_ provider.ProviderWithActions = (*cdnproProvider)(nil)
+)
 
 // New returns a provider factory for the given build version.
 func New(version string) func() provider.Provider {
@@ -54,6 +58,8 @@ type pollingModel struct {
 	DeploymentTimeout    types.String `tfsdk:"deployment_timeout"`
 	EdgeHostnameInterval types.String `tfsdk:"edge_hostname_interval"`
 	EdgeHostnameTimeout  types.String `tfsdk:"edge_hostname_timeout"`
+	PurgeInterval        types.String `tfsdk:"purge_interval"`
+	PurgeTimeout         types.String `tfsdk:"purge_timeout"`
 }
 
 // ProviderData is handed to every resource and data source via Configure.
@@ -62,6 +68,7 @@ type ProviderData struct {
 	ValidationPoll   client.PollConfig
 	DeploymentPoll   client.PollConfig
 	EdgeHostnamePoll client.PollConfig
+	PurgePoll        client.PollConfig
 }
 
 func (p *cdnproProvider) Metadata(_ context.Context, _ provider.MetadataRequest, resp *provider.MetadataResponse) {
@@ -101,6 +108,8 @@ func (p *cdnproProvider) Schema(_ context.Context, _ provider.SchemaRequest, res
 					"deployment_timeout":     durationAttr("Maximum time to wait for a deployment task.", client.DefaultDeploymentPoll.Timeout),
 					"edge_hostname_interval": durationAttr("Interval between edge hostname provisioning checks.", client.DefaultEdgeHostnamePoll.Interval),
 					"edge_hostname_timeout":  durationAttr("Maximum time to wait for an edge hostname operation.", client.DefaultEdgeHostnamePoll.Timeout),
+					"purge_interval":         durationAttr("Interval between purge/prefetch status checks.", client.DefaultPurgePoll.Interval),
+					"purge_timeout":          durationAttr("Maximum time to wait for a purge or prefetch.", client.DefaultPurgePoll.Timeout),
 				},
 			},
 		},
@@ -162,6 +171,7 @@ func (p *cdnproProvider) Configure(ctx context.Context, req provider.ConfigureRe
 		ValidationPoll:   client.DefaultValidationPoll,
 		DeploymentPoll:   client.DefaultDeploymentPoll,
 		EdgeHostnamePoll: client.DefaultEdgeHostnamePoll,
+		PurgePoll:        client.DefaultPurgePoll,
 	}
 	if cfg.Polling != nil {
 		pollPath := path.Root("polling")
@@ -171,6 +181,8 @@ func (p *cdnproProvider) Configure(ctx context.Context, req provider.ConfigureRe
 		data.DeploymentPoll.Timeout = parseDuration(&resp.Diagnostics, pollPath.AtName("deployment_timeout"), cfg.Polling.DeploymentTimeout, data.DeploymentPoll.Timeout)
 		data.EdgeHostnamePoll.Interval = parseDuration(&resp.Diagnostics, pollPath.AtName("edge_hostname_interval"), cfg.Polling.EdgeHostnameInterval, data.EdgeHostnamePoll.Interval)
 		data.EdgeHostnamePoll.Timeout = parseDuration(&resp.Diagnostics, pollPath.AtName("edge_hostname_timeout"), cfg.Polling.EdgeHostnameTimeout, data.EdgeHostnamePoll.Timeout)
+		data.PurgePoll.Interval = parseDuration(&resp.Diagnostics, pollPath.AtName("purge_interval"), cfg.Polling.PurgeInterval, data.PurgePoll.Interval)
+		data.PurgePoll.Timeout = parseDuration(&resp.Diagnostics, pollPath.AtName("purge_timeout"), cfg.Polling.PurgeTimeout, data.PurgePoll.Timeout)
 	}
 	if resp.Diagnostics.HasError() {
 		return
@@ -178,6 +190,7 @@ func (p *cdnproProvider) Configure(ctx context.Context, req provider.ConfigureRe
 
 	resp.ResourceData = data
 	resp.DataSourceData = data
+	resp.ActionData = data
 }
 
 func (p *cdnproProvider) Resources(_ context.Context) []func() resource.Resource {
@@ -193,7 +206,19 @@ func (p *cdnproProvider) Resources(_ context.Context) []func() resource.Resource
 }
 
 func (p *cdnproProvider) DataSources(_ context.Context) []func() datasource.DataSource {
-	return nil
+	return []func() datasource.DataSource{
+		NewHostnameDataSource,
+		NewShieldsDataSource,
+		NewISPsDataSource,
+		NewClientRegionsDataSource,
+	}
+}
+
+func (p *cdnproProvider) Actions(_ context.Context) []func() action.Action {
+	return []func() action.Action{
+		NewPurgeAction,
+		NewPrefetchAction,
+	}
 }
 
 func stringOrEnv(v types.String, env string) string {

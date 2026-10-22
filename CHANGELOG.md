@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+Phase 3 (operational actions and data sources) of the CDN Pro Terraform provider (NCAS-5719):
+
+- `cdnpro_purge` and `cdnpro_prefetch` as Terraform Actions (Terraform >= 1.14):
+  invokable ad hoc or from `lifecycle.action_trigger`, polled to completion,
+  failing on a partial `successRate`.
+- Data sources `cdnpro_hostname`, `cdnpro_shields`, `cdnpro_isps` and
+  `cdnpro_client_regions` with deterministic ordering.
+- Provider `polling` block gains `purge_interval` / `purge_timeout`.
+- Mock API endpoints and acceptance tests for all of the above.
+
 Phase 2 (supporting configuration) of the CDN Pro Terraform provider (NCAS-5719):
 
 - `cdnpro_secret`: write-only `secret` tracked by hash and rotated in place.
