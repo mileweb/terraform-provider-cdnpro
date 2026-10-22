@@ -150,7 +150,7 @@ One-off setup, needed before the first release:
 
 1. Generate a GPG key (`gpg --full-generate-key`, RSA 4096, no expiry is
    simplest) and export it: `gpg --armor --export-secret-keys <id>`.
-2. Add repository secrets `GPG_PRIVATE_KEY` (the armoured private key) and
+2. Add repository secrets `TERRAFORM_PROVIDER_PRIVATE_KEY` (the armoured private key) and
    `PASSPHRASE`.
 3. Upload the public key (`gpg --armor --export <id>`) to
    <https://registry.terraform.io/settings/gpg-keys> for the `mileweb`

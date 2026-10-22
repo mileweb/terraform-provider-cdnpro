@@ -3,9 +3,10 @@
 # ingest the artifacts.
 #
 # Required repository secrets:
-#   GPG_PRIVATE_KEY  ASCII-armoured private key whose public half is registered
-#                    on registry.terraform.io for the mileweb namespace
-#   PASSPHRASE       passphrase for that key
+#   TERRAFORM_PROVIDER_PRIVATE_KEY  ASCII-armoured private key whose public half
+#                                   is registered on registry.terraform.io for
+#                                   the mileweb namespace
+#   PASSPHRASE                      passphrase for that key
 name: Release
 
 on:
@@ -38,7 +39,7 @@ jobs:
         id: import_gpg
         uses: crazy-max/ghaction-import-gpg@v6
         with:
-          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg_private_key: ${{ secrets.TERRAFORM_PROVIDER_PRIVATE_KEY }}
           passphrase: ${{ secrets.PASSPHRASE }}
 
       - name: Run GoReleaser
