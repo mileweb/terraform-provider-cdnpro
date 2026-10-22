@@ -131,6 +131,31 @@ provider_installation {
 }
 ```
 
+### Releasing
+
+Releases are cut by [`.github/workflows/release.yml`](.github/workflows/release.yml),
+which runs goreleaser on every `v*` tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The workflow cross-compiles for linux/darwin/windows on amd64/arm64, signs the
+checksums, attaches `terraform-registry-manifest.json` and leaves a **draft**
+GitHub release to review and publish by hand. The Terraform Registry picks the
+release up once it is published.
+
+One-off setup, needed before the first release:
+
+1. Generate a GPG key (`gpg --full-generate-key`, RSA 4096, no expiry is
+   simplest) and export it: `gpg --armor --export-secret-keys <id>`.
+2. Add repository secrets `GPG_PRIVATE_KEY` (the armoured private key) and
+   `PASSPHRASE`.
+3. Upload the public key (`gpg --armor --export <id>`) to
+   <https://registry.terraform.io/settings/gpg-keys> for the `mileweb`
+   namespace, then publish the provider from the same settings page.
+
 ### Layout
 
 ```

@@ -1,0 +1,51 @@
+# Builds, signs and publishes a draft GitHub release whenever a v* tag is
+# pushed. Follows the HashiCorp provider template so the Terraform Registry can
+# ingest the artifacts.
+#
+# Required repository secrets:
+#   GPG_PRIVATE_KEY  ASCII-armoured private key whose public half is registered
+#                    on registry.terraform.io for the mileweb namespace
+#   PASSPHRASE       passphrase for that key
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # goreleaser needs the full history to resolve the previous tag.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - run: go mod download
+      - run: make lint
+      - run: go test ./... -run 'Test[^A]' -count=1
+
+      - name: Import GPG key
+        id: import_gpg
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.PASSPHRASE }}
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
