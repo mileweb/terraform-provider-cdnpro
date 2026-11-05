@@ -2,41 +2,9 @@
 
 ## 1.0.0 (2026-11-05)
 
-First release published to the Terraform Registry as `mileweb/cdnpro`
-(NCAS-5719). The provider is functionally identical to 0.1.2, which was
-published as `HuberyChen1/cdnpro` while the `mileweb` namespace was being set
-up; only the provider address changes.
-
-- **Provider source is now `mileweb/cdnpro`.** Configurations and states
-  created with the interim `HuberyChen1/cdnpro` address are moved with
-
-  ```bash
-  terraform state replace-provider HuberyChen1/cdnpro mileweb/cdnpro
-  terraform init -upgrade
-  ```
-
-  after updating `source` in the `required_providers` block.
-
-## 0.1.2 (2026-11-05)
-
-Published as `HuberyChen1/cdnpro`. Fix from QA of 0.1.1 (NCAS-5719, finding #5):
-
-- **Switching the key algorithm replaces the certificate.** The API refuses a
-  certificate version whose key family (RSA or EC) differs from the existing
-  versions, and 0.1.1 found that out only at apply time: the plan showed an
-  in-place update and the apply failed with `400 InvalidCertVersion`, after
-  other resources in the same run may already have been changed. The provider
-  now derives the family of the configured material (the `RSA2048` / `ECC256`
-  keywords, the private key PEM, or the public key of the certificate PEM) and,
-  when it differs from the `algorithm` of the existing versions, plans a
-  replacement (`-/+`, with `algorithm` forcing it) and warns that a certificate
-  in use needs `create_before_destroy`. Material the provider cannot parse keeps
-  the in-place update and the verdict of the API. The mock API now enforces the
-  rule as well.
-
-## 0.1.1 (2026-11-02)
-
-Published as `HuberyChen1/cdnpro`. Fixes from QA of 0.1.0 (NCAS-5719):
+First stable release of the CDN Pro Terraform provider, published to the
+Terraform Registry as `mileweb/cdnpro`. It carries the fixes from the QA
+rounds of 0.1.0 (NCAS-5719, findings #2 to #5):
 
 - **Import no longer rewrites write-only values.** After `terraform import` of
   a `cdnpro_certificate`, `cdnpro_secret` or `cdnpro_webhook`, the first apply
@@ -57,6 +25,22 @@ Published as `HuberyChen1/cdnpro`. Fixes from QA of 0.1.0 (NCAS-5719):
   now re-reads such a task once after a short delay, and the diagnostic always
   names the task and the `GET /cdn/purges/{id}` / `GET /cdn/prefetches/{id}`
   endpoint to inspect it.
+- **Switching the key algorithm replaces the certificate.** The API refuses a
+  certificate version whose key family (RSA or EC) differs from the existing
+  versions, which previously surfaced only at apply time: the plan showed an
+  in-place update and the apply failed with `400 InvalidCertVersion`, after
+  other resources in the same run may already have been changed. The provider
+  now derives the family of the configured material (the `RSA2048` / `ECC256`
+  keywords, the private key PEM, or the public key of the certificate PEM) and,
+  when it differs from the `algorithm` of the existing versions, plans a
+  replacement (`-/+`, with `algorithm` forcing it) and warns that a certificate
+  in use needs `create_before_destroy`. Material the provider cannot parse keeps
+  the in-place update and the verdict of the API. The mock API now enforces the
+  rule as well.
+- **Provider source is `mileweb/cdnpro`.** States created with the interim
+  `HuberyChen1/cdnpro` address used during QA are moved with
+  `terraform state replace-provider HuberyChen1/cdnpro mileweb/cdnpro` followed
+  by `terraform init -upgrade`, after updating `source` in `required_providers`.
 
 ## 0.1.0 (2026-10-22)
 
