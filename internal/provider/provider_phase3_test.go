@@ -132,9 +132,11 @@ func TestAccPurgeAction(t *testing.T) {
 				Check:  purgeCount(1),
 			},
 			{
-				// A partial success rate fails the apply with a clear message.
+				// A partial success rate fails the apply with a clear message. The
+				// mock attaches the error list one read after the terminal status,
+				// so seeing the code proves the settle re-read.
 				Config:      providerHCL(m) + purgeActionHCL("https://www.example.com/partial/"),
-				ExpectError: regexp.MustCompile(`Purge partially failed[\s\S]*50\.0%`),
+				ExpectError: regexp.MustCompile(`Purge partially failed[\s\S]*50\.0%[\s\S]*\[PartialFailure\][\s\S]*GET\s+/cdn/purges/purge\d+`),
 			},
 			{
 				// An undeployed host surfaces the API code plus the target hint.

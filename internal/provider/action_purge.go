@@ -157,7 +157,7 @@ func (a *purgeAction) Invoke(ctx context.Context, req action.InvokeRequest, resp
 	}
 	if task.SuccessRate != nil && *task.SuccessRate < 100 {
 		resp.Diagnostics.AddError("Purge partially failed",
-			fmt.Sprintf("Purge %s finished with a success rate of %.1f%%. %s", id, *task.SuccessRate, formatErrorsHint(task.Errors)))
+			taskFailureDetail("Purge", id, "/cdn/purges", *task.SuccessRate, task.Errors))
 		return
 	}
 	progress(resp, fmt.Sprintf("purge %s finished (%s)", id, task.Status))
@@ -169,15 +169,20 @@ func progress(resp *action.InvokeResponse, msg string) {
 	}
 }
 
-func formatErrorsHint(errs []client.TaskError) string {
+// taskFailureDetail describes a purge or prefetch that finished below 100%:
+// the per-URL errors the API attached to the task, or an explicit note when
+// it attached none, plus the endpoint to inspect the task by hand.
+func taskFailureDetail(kind, id, basePath string, rate float64, errs []client.TaskError) string {
+	msg := fmt.Sprintf("%s %s finished with a success rate of %.1f%%.", kind, id, rate)
 	if len(errs) == 0 {
-		return ""
+		msg += " The API attached no error details to the task."
+	} else {
+		msg += " Errors reported:"
+		for _, e := range errs {
+			msg += fmt.Sprintf(" [%s] %s", e.ErrorCode, e.ErrorMessage)
+		}
 	}
-	out := "Errors reported:"
-	for _, e := range errs {
-		out += fmt.Sprintf(" [%s] %s", e.ErrorCode, e.ErrorMessage)
-	}
-	return out
+	return fmt.Sprintf("%s Full task: GET %s/%s.", msg, basePath, id)
 }
 
 // addPurgeError adds a hint for the URL/host errors whose raw message does not

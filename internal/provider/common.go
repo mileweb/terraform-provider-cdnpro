@@ -18,6 +18,16 @@ import (
 // Private state keys shared by resources.
 const (
 	privateLastModified = "last_modified"
+	// privateAdopted marks a resource that entered the state through
+	// terraform import. Its write-only values were never sent by this
+	// configuration, so no hashes exist to compare the configuration against.
+	// While the marker is set, the configured write-only values are taken to
+	// match what is on the server. ModifyPlan makes sure the first plan after
+	// the import carries a change, and the Update that applies it records the
+	// hashes and clears the marker without calling the API, so later changes
+	// are detected as usual. (Terraform persists private state only through
+	// an apply, which is why a no-op plan cannot do the recording.)
+	privateAdopted = "adopted"
 )
 
 // privateState is the subset of resource.ReadRequest/Response.Private etc. the
@@ -57,6 +67,32 @@ func setPrivate(ctx context.Context, p privateSetter, key, value string, diags *
 	}
 	encoded, _ := json.Marshal(value)
 	diags.Append(p.SetKey(ctx, key, encoded)...)
+}
+
+// markAdopted is called from ImportState so the next plan adopts the
+// configured write-only values instead of treating them as changed.
+func markAdopted(ctx context.Context, p privateSetter, diags *diag.Diagnostics) {
+	setPrivate(ctx, p, privateAdopted, "1", diags)
+}
+
+// isAdopted reports whether the resource still awaits its first plan after
+// import.
+func isAdopted(ctx context.Context, p privateGetter) bool {
+	return getPrivate(ctx, p, privateAdopted) != ""
+}
+
+// clearAdopted is called from Update once the hashes have been recorded.
+func clearAdopted(ctx context.Context, p privateSetter, diags *diag.Diagnostics) {
+	setPrivate(ctx, p, privateAdopted, "", diags)
+}
+
+// addAdoptionWarning is emitted by ModifyPlan for an imported resource. The
+// plan it accompanies always carries a change (Terraform only persists
+// private state through an apply), so the warning says what that apply does.
+func addAdoptionWarning(diags *diag.Diagnostics, kind, attrs string) {
+	diags.AddWarning(kind+" was imported: adopting the configured "+attrs,
+		"The API never returns "+attrs+", so the configured value is taken to be the one on the server. "+
+			"The apply that follows only records its hash so that later changes are detected; nothing is sent to the API.")
 }
 
 // addAPIError converts an error from the client into a diagnostic. API codes

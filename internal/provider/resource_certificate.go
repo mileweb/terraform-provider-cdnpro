@@ -131,8 +131,13 @@ func buildCertificateSchema() schema.Schema {
 	return schema.Schema{
 		MarkdownDescription: "A CDN Pro TLS certificate together with its versions. Certificate material " +
 			"(`private_key`, `certificate`, `chain_cert`) is write-only: the API never returns it, so the provider " +
-			"stores only hashes and mints a new certificate version whenever any of them changes. Requires Terraform 1.11 or later. " +
-			"A new version must keep the key algorithm of the existing versions; to switch between RSA and EC, create a new resource.",
+			"stores only hashes and mints a new certificate version whenever any of them changes. After `terraform import` the " +
+			"configured material and `identification_info` are adopted as the current version: the first apply only records " +
+			"their hashes (the plan shows `identification_info` being recorded, or `latest_version` as unknown when there is " +
+			"none) and nothing is uploaded. Requires Terraform 1.11 or later. " +
+			"Every version of a certificate must use the same key algorithm, so switching the material between RSA and EC " +
+			"replaces the certificate (new ID); set `lifecycle { create_before_destroy = true }` on a certificate that a property " +
+			"or deployment references so the replacement is created first.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:      true,
@@ -156,7 +161,8 @@ func buildCertificateSchema() schema.Schema {
 				WriteOnly: true,
 				Sensitive: true,
 				MarkdownDescription: "Private key in PEM format, or the literal `RSA2048` / `ECC256` to have a key generated " +
-					"(with `certificate = \"GENERATE\"`). Encrypted client-side before upload.",
+					"(with `certificate = \"GENERATE\"`). Encrypted client-side before upload. Switching between an RSA and an EC key " +
+					"replaces the certificate.",
 			},
 			"certificate": schema.StringAttribute{
 				Required:            true,
@@ -171,8 +177,9 @@ func buildCertificateSchema() schema.Schema {
 				MarkdownDescription: "Intermediate chain in PEM format.",
 			},
 			"identification_info": schema.SingleNestedAttribute{
-				Optional:            true,
-				MarkdownDescription: "Subject of a generated certificate. Ignored for uploaded certificates.",
+				Optional: true,
+				MarkdownDescription: "Subject of a generated certificate. Ignored for uploaded certificates. " +
+					"Not returned by the API: after import it is recorded from the configuration without creating a new version.",
 				Attributes: map[string]schema.Attribute{
 					"country":                   schema.StringAttribute{Optional: true, Validators: []validator.String{stringvalidator.LengthBetween(2, 2)}},
 					"state":                     schema.StringAttribute{Optional: true},
@@ -236,6 +243,10 @@ func writeOnlyHashes(m *certificateModel) (pk, cert, chain string) {
 
 // materialChanged compares config hashes against private state.
 func (r *certificateResource) materialChanged(ctx context.Context, cfg *certificateModel, priv privateGetter) bool {
+	if isAdopted(ctx, priv) {
+		// Imported: the configured material is taken to be what the server holds.
+		return false
+	}
 	if cfg.PrivateKey.IsUnknown() || cfg.Certificate.IsUnknown() || cfg.ChainCert.IsUnknown() {
 		return true
 	}
@@ -252,9 +263,22 @@ func (r *certificateResource) storeHashes(ctx context.Context, cfg *certificateM
 	setPrivate(ctx, priv, privateHashChainCert, chain, diags)
 }
 
+// identificationInfoChanged reports whether a differing identification_info
+// should mint a new version. The API never returns the subject that was used
+// to generate a certificate, so a state without one (after import) adopts the
+// configured value instead of re-issuing the certificate; the material hashes
+// still catch a switch to or from generated material.
+func identificationInfoChanged(plan, state *certificateModel) bool {
+	if state.IdentificationInfo.IsNull() {
+		return false
+	}
+	return !plan.IdentificationInfo.Equal(state.IdentificationInfo)
+}
+
 // ModifyPlan drives updates for write-only changes: when the configured
 // material differs from the stored hashes, latest_version (and the version
-// metadata) become unknown so Terraform plans an update.
+// metadata) become unknown so Terraform plans an update. A change of key family
+// (RSA to EC or back) is planned as a replacement instead.
 func (r *certificateResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
 	if req.State.Raw.IsNull() || req.Plan.Raw.IsNull() {
 		return
@@ -266,9 +290,30 @@ func (r *certificateResource) ModifyPlan(ctx context.Context, req resource.Modif
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	newVersion := r.materialChanged(ctx, &cfg, req.Private) ||
+	materialChanged := r.materialChanged(ctx, &cfg, req.Private)
+	newVersion := materialChanged ||
 		!plan.Comments.Equal(state.Comments) ||
-		!plan.IdentificationInfo.Equal(state.IdentificationInfo)
+		identificationInfoChanged(&plan, &state)
+	// The API rejects a version whose key family differs from the existing
+	// ones (400 InvalidCertVersion), so that change is a replacement, flagged on
+	// `algorithm` (unknown in the plan below, hence different from state).
+	// Material the provider cannot parse keeps the in-place update.
+	if materialChanged {
+		want := configuredAlgorithm(cfg.PrivateKey.ValueString(), cfg.Certificate.ValueString())
+		have := normalizeAlgorithm(state.Algorithm.ValueString())
+		if want != "" && have != "" && want != have {
+			resp.RequiresReplace = append(resp.RequiresReplace, path.Root("algorithm"))
+			addAlgorithmChangeWarning(&resp.Diagnostics, state.ID.ValueString(), have, want)
+		}
+	}
+	// After an import, Update has to run once to record the hashes (it sends
+	// nothing). A configured identification_info is already a diff against the
+	// imported state; otherwise latest_version is made unknown to force it.
+	forceApply := false
+	if isAdopted(ctx, req.Private) {
+		addAdoptionWarning(&resp.Diagnostics, "Certificate", "`private_key`, `certificate`, `chain_cert` and `identification_info`")
+		forceApply = plan.IdentificationInfo.Equal(state.IdentificationInfo)
+	}
 
 	// Computed attributes that describe the latest version.
 	versionAttrs := map[string]struct {
@@ -296,7 +341,7 @@ func (r *certificateResource) ModifyPlan(ctx context.Context, req resource.Modif
 	}
 	for name, v := range versionAttrs {
 		value := v.state
-		if newVersion {
+		if newVersion || (forceApply && name == "latest_version") {
 			value = v.unknown
 		}
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root(name), value)...)
@@ -488,7 +533,7 @@ func (r *certificateResource) Update(ctx context.Context, req resource.UpdateReq
 	}
 	newVersion := r.materialChanged(ctx, &cfg, req.Private) ||
 		!plan.Comments.Equal(state.Comments) ||
-		!plan.IdentificationInfo.Equal(state.IdentificationInfo)
+		identificationInfoChanged(&plan, &state)
 	if newVersion {
 		apiReq.NewVersion = r.newVersion(ctx, &plan, &cfg, &resp.Diagnostics)
 		if resp.Diagnostics.HasError() {
@@ -504,6 +549,7 @@ func (r *certificateResource) Update(ctx context.Context, req resource.UpdateReq
 		}
 	}
 	r.storeHashes(ctx, &cfg, resp.Private, &resp.Diagnostics)
+	clearAdopted(ctx, resp.Private, &resp.Diagnostics)
 
 	newState, lastModified, ok := r.read(ctx, id, &plan, &resp.Diagnostics)
 	if !ok {
@@ -530,4 +576,7 @@ func (r *certificateResource) Delete(ctx context.Context, req resource.DeleteReq
 
 func (r *certificateResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	// The material cannot be read back, so the configured one is adopted as-is
+	// instead of being uploaded as a new version on the next apply.
+	markAdopted(ctx, resp.Private, &resp.Diagnostics)
 }

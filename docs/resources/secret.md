@@ -3,12 +3,12 @@
 page_title: "cdnpro_secret Resource - cdnpro"
 subcategory: ""
 description: |-
-  A CDN Pro secret, referenced from Edge Logic as $SECRET(name) or from an origin's aws_s3.secret_key. The value is write-only: the API only ever returns a masked form, so the provider stores a hash and patches the secret in place when the configured value changes. Requires Terraform 1.11 or later. Properties reference secrets by name as plain text, so add depends_on on the property.
+  A CDN Pro secret, referenced from Edge Logic as $SECRET(name) or from an origin's aws_s3.secret_key. The value is write-only: the API only ever returns a masked form, so the provider stores a hash and patches the secret in place when the configured value changes. After terraform import the configured value is adopted as the current one: the first apply only records its hash (last_update_time shows as unknown in that plan) and nothing is sent to the API. Requires Terraform 1.11 or later. Properties reference secrets by name as plain text, so add depends_on on the property.
 ---
 
 # cdnpro_secret (Resource)
 
-A CDN Pro secret, referenced from Edge Logic as `$SECRET(name)` or from an origin's `aws_s3.secret_key`. The value is write-only: the API only ever returns a masked form, so the provider stores a hash and patches the secret in place when the configured value changes. Requires Terraform 1.11 or later. Properties reference secrets by name as plain text, so add `depends_on` on the property.
+A CDN Pro secret, referenced from Edge Logic as `$SECRET(name)` or from an origin's `aws_s3.secret_key`. The value is write-only: the API only ever returns a masked form, so the provider stores a hash and patches the secret in place when the configured value changes. After `terraform import` the configured value is adopted as the current one: the first apply only records its hash (`last_update_time` shows as unknown in that plan) and nothing is sent to the API. Requires Terraform 1.11 or later. Properties reference secrets by name as plain text, so add `depends_on` on the property.
 
 ## Example Usage
 
@@ -69,6 +69,7 @@ Read-Only:
 Import is supported using the following syntax:
 
 ```shell
-# Import by secret ID. The value is write-only; the first plan after import shows no diff for it.
+# Import by secret ID. The value is write-only, so the configured one is adopted
+# as the current value: the first apply only records its hash and sends nothing.
 terraform import cdnpro_secret.origin_auth k3j9d8s7f6g5h4j3
 ```

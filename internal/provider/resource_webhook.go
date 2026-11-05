@@ -71,7 +71,9 @@ func (r *webhookResource) Configure(_ context.Context, req resource.ConfigureReq
 func buildWebhookSchema() schema.Schema {
 	return schema.Schema{
 		MarkdownDescription: "A CDN Pro webhook, called when a deployment, purge or prefetch finishes. " +
-			"`credentials.secret_key` is write-only and tracked by hash. The API cannot remove credentials once set, " +
+			"`credentials.secret_key` is write-only and tracked by hash; after `terraform import` the configured key is " +
+			"adopted as the current one: the first apply only records its hash (`last_update_time` shows as unknown in " +
+			"that plan) and nothing is sent to the API. The API cannot remove credentials once set, " +
 			"so dropping the `credentials` block replaces the webhook. Requires Terraform 1.11 or later.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
@@ -139,6 +141,10 @@ func credentialsOf(ctx context.Context, obj types.Object, diags *diag.Diagnostic
 }
 
 func (r *webhookResource) secretKeyChanged(ctx context.Context, cfg *webhookModel, priv privateGetter) bool {
+	if isAdopted(ctx, priv) {
+		// Imported: the configured key is taken to be what the server holds.
+		return false
+	}
 	var diags diag.Diagnostics
 	c := credentialsOf(ctx, cfg.Credentials, &diags)
 	if c == nil {
@@ -180,6 +186,11 @@ func (r *webhookResource) ModifyPlan(ctx context.Context, req resource.ModifyPla
 	if r.secretKeyChanged(ctx, &cfg, req.Private) || !plan.Name.Equal(state.Name) || !plan.URL.Equal(state.URL) ||
 		!plan.Description.Equal(state.Description) || !planUser.Equal(stateUser) {
 		lastUpdate = types.StringUnknown()
+	}
+	if isAdopted(ctx, req.Private) {
+		// Force an apply so Update can record the hash; it sends nothing.
+		lastUpdate = types.StringUnknown()
+		addAdoptionWarning(&resp.Diagnostics, "Webhook", "`credentials.secret_key`")
 	}
 	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("last_update_time"), lastUpdate)...)
 	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("last_call_time"), state.LastCallTime)...)
@@ -324,6 +335,7 @@ func (r *webhookResource) Update(ctx context.Context, req resource.UpdateRequest
 		}
 	}
 	r.storeHash(ctx, &cfg, resp.Private, &resp.Diagnostics)
+	clearAdopted(ctx, resp.Private, &resp.Diagnostics)
 
 	newState, lastModified, ok := r.read(ctx, id, &plan, &resp.Diagnostics)
 	if !ok {
@@ -350,4 +362,7 @@ func (r *webhookResource) Delete(ctx context.Context, req resource.DeleteRequest
 
 func (r *webhookResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	// secret_key cannot be read back, so the configured one is adopted as-is
+	// instead of being pushed to the server on the next apply.
+	markAdopted(ctx, resp.Private, &resp.Diagnostics)
 }

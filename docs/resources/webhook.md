@@ -3,12 +3,12 @@
 page_title: "cdnpro_webhook Resource - cdnpro"
 subcategory: ""
 description: |-
-  A CDN Pro webhook, called when a deployment, purge or prefetch finishes. credentials.secret_key is write-only and tracked by hash. The API cannot remove credentials once set, so dropping the credentials block replaces the webhook. Requires Terraform 1.11 or later.
+  A CDN Pro webhook, called when a deployment, purge or prefetch finishes. credentials.secret_key is write-only and tracked by hash; after terraform import the configured key is adopted as the current one: the first apply only records its hash (last_update_time shows as unknown in that plan) and nothing is sent to the API. The API cannot remove credentials once set, so dropping the credentials block replaces the webhook. Requires Terraform 1.11 or later.
 ---
 
 # cdnpro_webhook (Resource)
 
-A CDN Pro webhook, called when a deployment, purge or prefetch finishes. `credentials.secret_key` is write-only and tracked by hash. The API cannot remove credentials once set, so dropping the `credentials` block replaces the webhook. Requires Terraform 1.11 or later.
+A CDN Pro webhook, called when a deployment, purge or prefetch finishes. `credentials.secret_key` is write-only and tracked by hash; after `terraform import` the configured key is adopted as the current one: the first apply only records its hash (`last_update_time` shows as unknown in that plan) and nothing is sent to the API. The API cannot remove credentials once set, so dropping the `credentials` block replaces the webhook. Requires Terraform 1.11 or later.
 
 ## Example Usage
 
@@ -66,5 +66,7 @@ Import is supported using the following syntax:
 ```shell
 # The webhook ID is only returned when it is created (Location header); it is not
 # in the GET response, so take it from wherever it was recorded (e.g. the portal).
+# credentials.secret_key is write-only, so the configured one is adopted as the
+# current key: the first apply only records its hash and sends nothing.
 terraform import cdnpro_webhook.deploy_notify 6716f3a2b1c0d9e8f7a6b5c4
 ```

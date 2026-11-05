@@ -13,7 +13,7 @@ resource "cdnpro_certificate" "dev" {
   name       = "dev-self-signed"
   auto_renew = "Off"
 
-  private_key = "RSA2048"  # or "ECC256"
+  private_key = "RSA2048"  # or "ECC256"; switching between the two later replaces the certificate
   certificate = "GENERATE"
 
   identification_info = {

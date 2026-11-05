@@ -3,12 +3,12 @@
 page_title: "cdnpro_certificate Resource - cdnpro"
 subcategory: ""
 description: |-
-  A CDN Pro TLS certificate together with its versions. Certificate material (private_key, certificate, chain_cert) is write-only: the API never returns it, so the provider stores only hashes and mints a new certificate version whenever any of them changes. Requires Terraform 1.11 or later. A new version must keep the key algorithm of the existing versions; to switch between RSA and EC, create a new resource.
+  A CDN Pro TLS certificate together with its versions. Certificate material (private_key, certificate, chain_cert) is write-only: the API never returns it, so the provider stores only hashes and mints a new certificate version whenever any of them changes. After terraform import the configured material and identification_info are adopted as the current version: the first apply only records their hashes (the plan shows identification_info being recorded, or latest_version as unknown when there is none) and nothing is uploaded. Requires Terraform 1.11 or later. Every version of a certificate must use the same key algorithm, so switching the material between RSA and EC replaces the certificate (new ID); set lifecycle { create_before_destroy = true } on a certificate that a property or deployment references so the replacement is created first.
 ---
 
 # cdnpro_certificate (Resource)
 
-A CDN Pro TLS certificate together with its versions. Certificate material (`private_key`, `certificate`, `chain_cert`) is write-only: the API never returns it, so the provider stores only hashes and mints a new certificate version whenever any of them changes. Requires Terraform 1.11 or later. A new version must keep the key algorithm of the existing versions; to switch between RSA and EC, create a new resource.
+A CDN Pro TLS certificate together with its versions. Certificate material (`private_key`, `certificate`, `chain_cert`) is write-only: the API never returns it, so the provider stores only hashes and mints a new certificate version whenever any of them changes. After `terraform import` the configured material and `identification_info` are adopted as the current version: the first apply only records their hashes (the plan shows `identification_info` being recorded, or `latest_version` as unknown when there is none) and nothing is uploaded. Requires Terraform 1.11 or later. Every version of a certificate must use the same key algorithm, so switching the material between RSA and EC replaces the certificate (new ID); set `lifecycle { create_before_destroy = true }` on a certificate that a property or deployment references so the replacement is created first.
 
 ## Example Usage
 
@@ -28,7 +28,7 @@ resource "cdnpro_certificate" "dev" {
   name       = "dev-self-signed"
   auto_renew = "Off"
 
-  private_key = "RSA2048"  # or "ECC256"
+  private_key = "RSA2048"  # or "ECC256"; switching between the two later replaces the certificate
   certificate = "GENERATE"
 
   identification_info = {
@@ -51,7 +51,7 @@ resource "cdnpro_certificate" "dev" {
 
 - `certificate` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Certificate in PEM format, or the literal `GENERATE` for a ten-day self-signed test certificate.
 - `name` (String)
-- `private_key` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Private key in PEM format, or the literal `RSA2048` / `ECC256` to have a key generated (with `certificate = "GENERATE"`). Encrypted client-side before upload.
+- `private_key` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Private key in PEM format, or the literal `RSA2048` / `ECC256` to have a key generated (with `certificate = "GENERATE"`). Encrypted client-side before upload. Switching between an RSA and an EC key replaces the certificate.
 
 ### Optional
 
@@ -62,7 +62,7 @@ resource "cdnpro_certificate" "dev" {
 - `comments` (String) Comment stored on the certificate version. Changing it creates a new version.
 - `description` (String)
 - `force_renew` (Boolean)
-- `identification_info` (Attributes) Subject of a generated certificate. Ignored for uploaded certificates. (see [below for nested schema](#nestedatt--identification_info))
+- `identification_info` (Attributes) Subject of a generated certificate. Ignored for uploaded certificates. Not returned by the API: after import it is recorded from the configuration without creating a new version. (see [below for nested schema](#nestedatt--identification_info))
 
 ### Read-Only
 
@@ -135,7 +135,9 @@ Read-Only:
 Import is supported using the following syntax:
 
 ```shell
-# Import by certificate ID. Write-only material cannot be read back; the first
-# plan after import shows no diff for private_key / certificate / chain_cert.
+# Import by certificate ID. Write-only material cannot be read back, so the
+# configured private_key / certificate / chain_cert (and identification_info)
+# are adopted as the current version: the first apply only records their hashes
+# and uploads nothing.
 terraform import cdnpro_certificate.prod 5f1e2d3c4b5a69788796a5b4
 ```

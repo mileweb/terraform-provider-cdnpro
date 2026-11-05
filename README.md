@@ -63,7 +63,9 @@ attribute reference.
   `cdnpro_property` or `cdnpro_certificate` is an in-place update from
   Terraform's point of view. Internally the provider patches the latest
   property version when it has never been deployed, and otherwise creates a new
-  version. Certificates always get a new version. Creating a version never
+  version. Certificates always get a new version, except that the API forbids
+  changing the key algorithm (RSA to EC or back) across versions: that change
+  is planned as a replacement of the certificate. Creating a version never
   deploys it.
 - **Deployments validate first.** `cdnpro_deployment` runs the property
   validation the API requires before `deploy_property`, retries once on
@@ -79,15 +81,19 @@ attribute reference.
   certificates, `secret` on secrets and `credentials.secret_key` on webhooks are
   never stored in state; SHA-256 hashes in private state drive change
   detection. A changed value shows up in the plan as `last_update_time` (or the
-  certificate's `latest_version`) becoming known after apply. The private key
-  is AES-128-CBC encrypted with key material derived from the request `Date`
-  header, exactly as the API requires.
+  certificate's `latest_version`) becoming known after apply. After
+  `terraform import` there are no hashes yet, so the configured values are
+  adopted as the current ones: the first apply records their hashes and sends
+  nothing (the plan carries the same unknown attribute plus a warning saying
+  so). The private key is AES-128-CBC encrypted with key material derived from
+  the request `Date` header, exactly as the API requires.
 - **Edge hostnames are polled** on `history[0]`; a successful deletion is
   observed as a `404`.
 - **Purge and prefetch are Terraform Actions**, not resources: nothing is
   stored in state. Both wait for the task to finish (purges read their status
   top-level, prefetches under `metaData`) and fail the apply when the API's
-  `successRate` is below 100. A prefetch with `start_time` is only submitted,
+  `successRate` is below 100, quoting the task's `errors` list and the GET
+  endpoint to inspect it. A prefetch with `start_time` is only submitted,
   not awaited.
 - **Data sources are plain pass-throughs** with deterministic sorting; the
   API's sort parameters are deliberately not exposed.
@@ -137,8 +143,8 @@ Releases are cut by [`.github/workflows/release.yml`](.github/workflows/release.
 which runs goreleaser on every `v*` tag:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
 The workflow cross-compiles for linux/darwin/windows on amd64/arm64, signs the
@@ -191,7 +197,9 @@ docs/                         generated registry docs
 - Purge and prefetch status enums also contain `succeeded` and `failed`
   besides `finished`; the poller accepts all three as terminal. Prefetch
   status fields live under `metaData` (capital D), and the not-found code is
-  `InvalidPrefetchId`.
+  `InvalidPrefetchId`. Both publish `status` and `successRate` a moment before
+  the `errors` list is attached, so a task that finished below 100% without
+  errors is read once more after `client.TaskErrorSettleDelay` (3 s).
 - `GET /cdn/hostnames/{hostname}` returns 200 with null fields for an unknown
   hostname; `cdnpro_hostname` exposes this as `found = false` plus a warning.
 - Shield `ipV4` / `ipV6` are arrays of CIDRs, exposed as `ipv4` / `ipv6` lists.

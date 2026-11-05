@@ -85,9 +85,10 @@ func (m *mockAPI) handlePurges(w http.ResponseWriter, r *http.Request, rest []st
 		if t.status == "finished" {
 			out["finishTime"] = "2026-01-01T00:05:00Z"
 			out["successRate"] = t.rate
-			if t.rate < 100 {
+			if t.rate < 100 && t.finishedReads > 0 {
 				out["errors"] = []map[string]any{{"errorCode": "PartialFailure", "errorMessage": "some edges did not respond"}}
 			}
+			t.finishedReads++
 		}
 		writeJSON(w, 200, out)
 		return
@@ -104,11 +105,15 @@ func (m *mockAPI) handlePrefetches(w http.ResponseWriter, r *http.Request, rest 
 			apiError(w, 400, "InvalidPrefetchUrl", "fileList is empty")
 			return
 		}
+		rate := 100.0
 		for _, f := range files {
 			fm, _ := f.(map[string]any)
 			if u, _ := fm["url"].(string); strings.Contains(u, "undeployed") {
 				apiError(w, 400, "NoSuchDomain", "host not deployed to production")
 				return
+			} else if strings.Contains(u, partialPurgeMarker) {
+				// Every URL fails, as the real API reports for an origin 404.
+				rate = 0
 			}
 		}
 		if st, ok := body["startTime"].(string); ok {
@@ -119,7 +124,7 @@ func (m *mockAPI) handlePrefetches(w http.ResponseWriter, r *http.Request, rest 
 			}
 		}
 		id := m.nextID("pf")
-		m.prefetches[id] = &mockTask{kind: "prefetch", body: body, status: "waiting", ticks: 2, created: time.Now(), rate: 100}
+		m.prefetches[id] = &mockTask{kind: "prefetch", body: body, status: "waiting", ticks: 2, created: time.Now(), rate: rate}
 		w.Header().Set("Location", location(r, id))
 		w.WriteHeader(201)
 		return
@@ -135,6 +140,20 @@ func (m *mockAPI) handlePrefetches(w http.ResponseWriter, r *http.Request, rest 
 		if t.status == "finished" {
 			md["finishTime"] = "2026-01-01T00:05:00Z"
 			md["successRate"] = t.rate
+			if t.rate < 100 && t.finishedReads > 0 {
+				var errs []map[string]any
+				files, _ := t.body["fileList"].([]any)
+				for _, f := range files {
+					fm, _ := f.(map[string]any)
+					u, _ := fm["url"].(string)
+					errs = append(errs, map[string]any{
+						"errorCode":    "UnexpectedStatusCode-404",
+						"errorMessage": "prefetch " + u + " failed. Unexpected status code: 404.",
+					})
+				}
+				md["errors"] = errs
+			}
+			t.finishedReads++
 		}
 		writeJSON(w, 200, map[string]any{
 			"name": t.body["name"], "fileList": t.body["fileList"], "regions": t.body["regions"],

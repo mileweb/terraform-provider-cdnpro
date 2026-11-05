@@ -72,10 +72,11 @@ type mockCertificate struct {
 }
 
 type mockCertVersion struct {
-	version  int64
-	comments string
-	keyHash  string
-	certHash string
+	version   int64
+	comments  string
+	keyHash   string
+	certHash  string
+	algorithm string
 }
 
 type mockEdgeHostname struct {
@@ -95,6 +96,10 @@ type mockTask struct {
 	applied bool
 	created time.Time
 	rate    float64 // successRate reported by purge/prefetch tasks
+	// finishedReads counts GETs that saw the task finished. The real API
+	// publishes status and successRate a moment before it attaches the error
+	// list, so the mock leaves errors out of the first such read.
+	finishedReads int
 }
 
 func newMockAPI() *mockAPI {
@@ -454,7 +459,12 @@ func (m *mockAPI) certVersionFromBody(w http.ResponseWriter, r *http.Request, nv
 		apiError(w, 400, "InvalidIdentificationInfo", "identificationInfo required")
 		return nil, false
 	}
-	return &mockCertVersion{version: n, comments: comments, keyHash: sha256Hex(pk), certHash: sha256Hex(cert)}, true
+	// Material the mock cannot parse (the truncated test fixtures) counts as RSA.
+	algorithm := algorithmRSA
+	if a := configuredAlgorithm(pk, cert); a != "" {
+		algorithm = a
+	}
+	return &mockCertVersion{version: n, comments: comments, keyHash: sha256Hex(pk), certHash: sha256Hex(cert), algorithm: algorithm}, true
 }
 
 func (m *mockAPI) handleCertificates(w http.ResponseWriter, r *http.Request, rest []string) {
@@ -539,6 +549,10 @@ func (m *mockAPI) handleCertificates(w http.ResponseWriter, r *http.Request, res
 			if !ok {
 				return
 			}
+			if v.algorithm != c.latest().algorithm {
+				apiError(w, 400, "InvalidCertVersion", "the key algorithm of a new version must match the existing versions")
+				return
+			}
 			c.versions = append(c.versions, v)
 			w.Header().Set("Location", location(r, "versions/"+strconv.FormatInt(n, 10)))
 			w.WriteHeader(201)
@@ -569,12 +583,16 @@ func (m *mockAPI) handleCertificates(w http.ResponseWriter, r *http.Request, res
 			return
 		}
 		w.Header().Set("Last-Modified", httpDate(c.lastUpdate))
+		keyLength, sigAlgo := int64(2048), "SHA256withRSA"
+		if v.algorithm == algorithmEC {
+			keyLength, sigAlgo = 256, "SHA256withECDSA"
+		}
 		writeJSON(w, 200, map[string]any{
 			"certificateId": rest[0], "name": c.name, "version": v.version, "type": "uploaded",
 			"expirationTime": "2027-01-01T00:00:00Z", "creationTime": "2026-01-01T00:00:00Z",
-			"subject": "CN=example.com", "issuer": "CN=Test CA", "signatureAlgo": "SHA256withRSA",
+			"subject": "CN=example.com", "issuer": "CN=Test CA", "signatureAlgo": sigAlgo,
 			"serialNumber": "0a1b", "fingerprint": v.certHash[:16], "comments": v.comments,
-			"algorithm": "RSA", "keyLength": 2048, "subjectAlternativeNames": []string{"example.com"},
+			"algorithm": v.algorithm, "keyLength": keyLength, "subjectAlternativeNames": []string{"example.com"},
 			"chainCertificates": []map[string]any{{"subject": "CN=Test CA", "issuer": "CN=Root", "expirationTime": "2030-01-01T00:00:00Z", "signatureAlgo": "SHA256withRSA"}},
 			"inProduction":      c.inProduction != nil && *c.inProduction == v.version,
 			"inStaging":         c.inStaging != nil && *c.inStaging == v.version,

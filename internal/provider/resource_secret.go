@@ -77,7 +77,9 @@ func buildSecretSchema() schema.Schema {
 	return schema.Schema{
 		MarkdownDescription: "A CDN Pro secret, referenced from Edge Logic as `$SECRET(name)` or from an origin's " +
 			"`aws_s3.secret_key`. The value is write-only: the API only ever returns a masked form, so the provider " +
-			"stores a hash and patches the secret in place when the configured value changes. Requires Terraform 1.11 or later. " +
+			"stores a hash and patches the secret in place when the configured value changes. After `terraform import` the " +
+			"configured value is adopted as the current one: the first apply only records its hash (`last_update_time` " +
+			"shows as unknown in that plan) and nothing is sent to the API. Requires Terraform 1.11 or later. " +
 			"Properties reference secrets by name as plain text, so add `depends_on` on the property.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
@@ -115,10 +117,21 @@ func buildSecretSchema() schema.Schema {
 }
 
 func (r *secretResource) secretChanged(ctx context.Context, cfg *secretModel, priv privateGetter) bool {
+	if isAdopted(ctx, priv) {
+		// Imported: the configured value is taken to be what the server holds.
+		return false
+	}
 	if cfg.Secret.IsUnknown() {
 		return true
 	}
 	return sha256Hex(cfg.Secret.ValueString()) != getPrivate(ctx, priv, privateHashSecret)
+}
+
+func (r *secretResource) storeHash(ctx context.Context, cfg *secretModel, priv privateSetter, diags *diag.Diagnostics) {
+	if cfg.Secret.IsNull() || cfg.Secret.IsUnknown() {
+		return
+	}
+	setPrivate(ctx, priv, privateHashSecret, sha256Hex(cfg.Secret.ValueString()), diags)
 }
 
 // ModifyPlan turns a write-only change into a visible plan by marking
@@ -143,6 +156,11 @@ func (r *secretResource) ModifyPlan(ctx context.Context, req resource.ModifyPlan
 	if r.secretChanged(ctx, &cfg, req.Private) || !plan.Name.Equal(state.Name) || !plan.Description.Equal(state.Description) {
 		lastUpdate = types.StringUnknown()
 	}
+	if isAdopted(ctx, req.Private) {
+		// Force an apply so Update can record the hash; it sends nothing.
+		lastUpdate = types.StringUnknown()
+		addAdoptionWarning(&resp.Diagnostics, "Secret", "`secret`")
+	}
 	resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("last_update_time"), lastUpdate)...)
 }
 
@@ -162,7 +180,7 @@ func (r *secretResource) Create(ctx context.Context, req resource.CreateRequest,
 		addAPIError(&resp.Diagnostics, "Creating secret", err)
 		return
 	}
-	setPrivate(ctx, resp.Private, privateHashSecret, sha256Hex(cfg.Secret.ValueString()), &resp.Diagnostics)
+	r.storeHash(ctx, &cfg, resp.Private, &resp.Diagnostics)
 	state, lastModified, ok := r.read(ctx, id, &plan, &resp.Diagnostics)
 	if !ok || state == nil {
 		return
@@ -248,7 +266,8 @@ func (r *secretResource) Update(ctx context.Context, req resource.UpdateRequest,
 			return
 		}
 	}
-	setPrivate(ctx, resp.Private, privateHashSecret, sha256Hex(cfg.Secret.ValueString()), &resp.Diagnostics)
+	r.storeHash(ctx, &cfg, resp.Private, &resp.Diagnostics)
+	clearAdopted(ctx, resp.Private, &resp.Diagnostics)
 
 	newState, lastModified, ok := r.read(ctx, id, &plan, &resp.Diagnostics)
 	if !ok {
@@ -275,4 +294,7 @@ func (r *secretResource) Delete(ctx context.Context, req resource.DeleteRequest,
 
 func (r *secretResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	// The value cannot be read back, so the configured one is adopted as-is
+	// instead of being pushed to the server on the next apply.
+	markAdopted(ctx, resp.Private, &resp.Diagnostics)
 }

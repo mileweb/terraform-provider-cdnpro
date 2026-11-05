@@ -3,7 +3,32 @@ package client
 import (
 	"context"
 	"fmt"
+	"time"
 )
+
+// TaskErrorSettleDelay is how long WaitForPurge and WaitForPrefetch wait before
+// re-reading a task that finished with a success rate below 100 but no errors
+// attached yet. The API publishes the terminal status and the success rate a
+// moment before it attaches the error list, so a poll that lands in between
+// would otherwise report a failure without saying why.
+var TaskErrorSettleDelay = 3 * time.Second
+
+// needsErrorSettle reports whether a finished task is missing its error list.
+func needsErrorSettle(rate *float64, errs []TaskError) bool {
+	return rate != nil && *rate < 100 && len(errs) == 0
+}
+
+// waitSettle sleeps for TaskErrorSettleDelay unless ctx ends first.
+func waitSettle(ctx context.Context) bool {
+	t := time.NewTimer(TaskErrorSettleDelay)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
 
 // PurgeRequest is the body of POST /cdn/purges.
 type PurgeRequest struct {
@@ -123,6 +148,11 @@ func (c *Client) WaitForPurge(ctx context.Context, id string, cfg PollConfig) (*
 			return true, nil
 		}
 	})
+	if err == nil && needsErrorSettle(task.SuccessRate, task.Errors) && waitSettle(ctx) {
+		if t, gerr := c.GetPurge(ctx, id); gerr == nil {
+			task = t
+		}
+	}
 	return task, err
 }
 
@@ -172,6 +202,11 @@ func (c *Client) WaitForPrefetch(ctx context.Context, id string, cfg PollConfig)
 			return true, nil
 		}
 	})
+	if err == nil && needsErrorSettle(task.MetaData.SuccessRate, task.MetaData.Errors) && waitSettle(ctx) {
+		if t, gerr := c.GetPrefetch(ctx, id); gerr == nil {
+			task = t
+		}
+	}
 	return task, err
 }
 

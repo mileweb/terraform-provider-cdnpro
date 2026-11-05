@@ -8,11 +8,14 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+
+	"github.com/mileweb/terraform-provider-cdnpro/internal/client"
 )
 
 // Acceptance tests run the real Terraform CLI against the in-memory mock API.
@@ -49,6 +52,11 @@ func testAccSetup(t *testing.T) *mockAPI {
 	t.Setenv("TF_ACC", "1")
 	t.Setenv("TF_ACC_TERRAFORM_PATH", tf)
 	t.Setenv("CHECKPOINT_DISABLE", "1")
+	// The mock attaches task errors one read late on purpose; do not wait the
+	// production three seconds for them.
+	prev := client.TaskErrorSettleDelay
+	client.TaskErrorSettleDelay = 20 * time.Millisecond
+	t.Cleanup(func() { client.TaskErrorSettleDelay = prev })
 	m := newMockAPI()
 	t.Cleanup(m.Close)
 	return m

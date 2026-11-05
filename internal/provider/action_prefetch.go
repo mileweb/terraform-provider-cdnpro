@@ -175,7 +175,7 @@ func (a *prefetchAction) Invoke(ctx context.Context, req action.InvokeRequest, r
 	md := task.MetaData
 	if md.SuccessRate != nil && *md.SuccessRate < 100 {
 		resp.Diagnostics.AddError("Prefetch partially failed",
-			fmt.Sprintf("Prefetch %s finished with a success rate of %.1f%%. %s", id, *md.SuccessRate, formatErrorsHint(md.Errors)))
+			taskFailureDetail("Prefetch", id, "/cdn/prefetches", *md.SuccessRate, md.Errors))
 		return
 	}
 	progress(resp, fmt.Sprintf("prefetch %s finished (%s)", id, md.Status))
